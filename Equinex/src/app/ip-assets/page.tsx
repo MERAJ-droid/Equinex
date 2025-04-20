@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import Image from "next/image";
-import { useStateContext } from "@/context";
+import { useStarknetContext } from "@/context";
 import { Button } from "@/components/ui/button";
 import { ClipLoader } from "react-spinners";
 import NFTMintingConfirmation from "@/components/component/NFTMintingConfirmation";

@@ -2,7 +2,7 @@
 import NFTCard from "@/components/component/NFTCard";
 import NFTDetailView from "@/components/component/NFTDetailView";
 import React, { useState, useEffect, useRef } from "react";
-import { useStateContext } from "@/context";
+import { useStarknetContext } from "@/context";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
