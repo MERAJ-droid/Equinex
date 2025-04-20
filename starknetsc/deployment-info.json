@@ -1,0 +1,9 @@
+{
+  "networkName": "SN_SEPOLIA",
+  "contractAddress": "0x1732b8a3203f25c1a435fcb561b30f3e6c398041447faeb4fba37c628d25135",
+  "salt": "0x15e2f6f9cf385a0ea0c6d29fb4a39d041a8253efe09538e76ad2125a564c793",
+  "classHash": "0x10bf70d2aeabf241d8142f1f41084a35c1253d45e13ae70c42ce3ba66e73b5f",
+  "contractClassFilePath": "C:\\Users\\Meraj\\Desktop\\EquineX\\starknetsc\\target\\dev\\equinex_starknet_StartupFunding.contract_class.json",
+  "deploymentTimestamp": "2025-04-20T02:41:48.033Z",
+  "status": "PREPARED"
+}

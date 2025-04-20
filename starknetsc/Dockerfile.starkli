@@ -1,0 +1,9 @@
+FROM shardlabs/starkli:latest
+
+WORKDIR /app
+
+# Copy your compiled contract files
+COPY ./target /app/target
+
+# Set entrypoint to starkli
+ENTRYPOINT ["starkli"]
