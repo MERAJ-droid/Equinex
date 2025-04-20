@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: MIT
+
 #[starknet::contract]
 mod StartupFunding {
     use starknet::get_caller_address;
     use starknet::ContractAddress;
+    use starknet::contract_address_const;
+    use traits::Into;
+    use integer::BoundedInt;
 
     #[storage]
     struct Storage {
@@ -45,7 +49,68 @@ mod StartupFunding {
         loan_lender_count: LegacyMap<felt252, felt252>,
         loan_lender_address: LegacyMap<(felt252, felt252), ContractAddress>,
         loan_lender_amount: LegacyMap<(felt252, felt252), felt252>,
+
+        // ERC721 storage
+        _next_token_id: felt252,
+        _token_owner: LegacyMap<felt252, ContractAddress>,
+        _token_approvals: LegacyMap<felt252, ContractAddress>,
+        _operator_approvals: LegacyMap<(ContractAddress, ContractAddress), bool>,
+        _token_uri: LegacyMap<felt252, felt252>,
+        _name: felt252,
+        _symbol: felt252,
+        
+        // NFT tracking
+        token_burned: LegacyMap<felt252, bool>,
+        investor_tokens: LegacyMap<(ContractAddress, felt252), felt252>, // Maps (investor, index) to token ID
+        investor_token_count: LegacyMap<(ContractAddress, felt252), felt252>, // Count of tokens per investor per startup
+        
+        // Equity holders
+        equity_holder_count: LegacyMap<felt252, felt252>,
+        equity_holder_name: LegacyMap<(felt252, felt252), felt252>,
+        equity_holder_percentage: LegacyMap<(felt252, felt252), felt252>,
     }
+
+    // Create a trait for internal functions
+#[generate_trait]
+impl InternalFunctions of InternalTrait {
+    // Internal function to check if token exists
+    fn _exists(self: @ContractState, token_id: felt252) -> bool {
+        let owner = self._token_owner.read(token_id);
+        owner.into() != 0
+    }
+
+    // Internal function to mint an NFT
+    fn _mint_investment_nft(
+        ref self: ContractState,
+        investor: ContractAddress,
+        startup_id: felt252,
+        amount: felt252
+    ) -> felt252 {
+        let token_id = self._next_token_id.read();
+        self._next_token_id.write(token_id + 1);
+        
+        // Mint the token
+        self._token_owner.write(token_id, investor);
+        
+        // Store token URI (simplified for now)
+        let startup_title = self.startup_title.read(startup_id);
+        self._token_uri.write(token_id, startup_title);
+        
+        // Track investor tokens
+        let token_count = self.investor_token_count.read((investor, startup_id));
+        self.investor_tokens.write((investor, startup_id), token_id);
+        self.investor_token_count.write((investor, startup_id), token_count + 1);
+        
+        // Emit Transfer event
+        self.emit(Transfer {
+            from: contract_address_const::<0>(),
+            to: investor,
+            token_id
+        });
+        
+        token_id
+    }
+}
 
     #[event]
     #[derive(Drop, starknet::Event)]
@@ -60,6 +125,14 @@ mod StartupFunding {
         LoanRequested: LoanRequested,
         LoanFunded: LoanFunded,
         LoanRepaid: LoanRepaid,
+        // ERC721 events
+        Transfer: Transfer,
+        Approval: Approval,
+        ApprovalForAll: ApprovalForAll,
+        
+        // NFT events
+        InvestmentNFTMinted: InvestmentNFTMinted,
+        InvestmentNFTBurned: InvestmentNFTBurned,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -134,11 +207,50 @@ mod StartupFunding {
         total_amount: felt252,
     }
 
+    #[derive(Drop, starknet::Event)]
+    struct Transfer {
+        from: ContractAddress,
+        to: ContractAddress,
+        token_id: felt252,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct Approval {
+        owner: ContractAddress,
+        approved: ContractAddress,
+        token_id: felt252,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct ApprovalForAll {
+        owner: ContractAddress,
+        operator: ContractAddress,
+        approved: bool,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct InvestmentNFTMinted {
+        investor: ContractAddress,
+        startup_id: felt252,
+        token_id: felt252,
+        amount: felt252,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct InvestmentNFTBurned {
+        token_id: felt252,
+    }
+
     #[constructor]
     fn constructor(ref self: ContractState) {
         self.startups_count.write(0);
         self.verifier.write(get_caller_address());
         self.loans_count.write(0);
+
+        // Initialize ERC721
+        self._name.write('EquineX Investment Certificate');
+        self._symbol.write('EQUINEX');
+        self._next_token_id.write(0);
     }
 
     #[external(v0)]
@@ -198,32 +310,6 @@ mod StartupFunding {
         self.verifier.write(new_verifier);
     }
 
-    // Fund a startup with a specific amount
-    #[external(v0)]
-    fn fund_startup(ref self: ContractState, id: felt252, amount: felt252) {
-        let funder = get_caller_address();
-        
-        // Validate startup exists
-        let owner = self.startup_owner.read(id);
-        let owner_zero: felt252 = owner.into();
-        assert(owner_zero != 0, 'Startup does not exist');
-        
-        // Update funder amount
-        let current_funder_amount = self.funder_amount.read((id, funder));
-        self.funder_amount.write((id, funder), current_funder_amount + amount);
-        
-        // Update total collected
-        let collected = self.startup_collected.read(id);
-        self.startup_collected.write(id, collected + amount);
-        
-        // Emit event
-        self.emit(StartupFunded { 
-            id, 
-            funder, 
-            amount 
-        });
-    }
-
     // Add a document to a startup
     #[external(v0)]
     fn add_startup_document(
@@ -260,66 +346,65 @@ mod StartupFunding {
 
     // Add a milestone to a startup
     #[external(v0)]
-    fn add_startup_milestone(
-        ref self: ContractState,
-        startup_id: felt252,
-        title: felt252,
-        description: felt252,
-        fund_amount: felt252
-    ) {
-        let caller = get_caller_address();
-        let owner = self.startup_owner.read(startup_id);
+fn add_startup_milestone(
+    ref self: ContractState,
+    startup_id: felt252,
+    title: felt252,
+    description: felt252,
+    fund_amount: felt252
+) {
+    let caller = get_caller_address();
+    let owner = self.startup_owner.read(startup_id);
+    
+    // Only owner can add milestones
+    assert(caller == owner, 'Only owner can add milestones');
+    
+    // Calculate total milestone funds
+    let milestone_count = self.milestone_count.read(startup_id);
+    let mut total_milestone_funds = 0;
+    let mut i = 0;
+    
+    loop {
+        // Use equality check instead of comparison
+        if i == milestone_count {
+            break;
+        }
         
-        // Only owner can add milestones
-        assert(caller == owner, 'Only owner can add milestones');
+        let milestone_amount = self.milestone_fund_amount.read((startup_id, i));
+        total_milestone_funds = total_milestone_funds + milestone_amount;
         
-        // Calculate total milestone funds
-        let milestone_count = self.milestone_count.read(startup_id);
-        let mut total_milestone_funds = 0;
-        let mut i = 0;
-        
-        loop {
-            // Use equality check instead of comparison
-            if i == milestone_count {
-                break;
-            }
-            
-            let milestone_amount = self.milestone_fund_amount.read((startup_id, i));
-            total_milestone_funds = total_milestone_funds + milestone_amount;
-            
-            i = i + 1;
-        };
-        
-        // Check if there are enough funds available
-        let collected = self.startup_collected.read(startup_id);
-        
-        // For simplicity, we'll just check if they're equal or if funds are less
-        let total_with_new = total_milestone_funds + fund_amount;
-        let funds_difference = collected - total_with_new;
-        let insufficient_funds = funds_difference + collected;
-        assert(insufficient_funds != collected, 'Not enough funds available');
-
-        // Get next milestone ID
-        let milestone_id = milestone_count;
-        
-        // Store milestone data
-        self.milestone_title.write((startup_id, milestone_id), title);
-        self.milestone_description.write((startup_id, milestone_id), description);
-        self.milestone_fund_amount.write((startup_id, milestone_id), fund_amount);
-        self.milestone_is_completed.write((startup_id, milestone_id), false);
-        self.milestone_proof_hash.write((startup_id, milestone_id), 0); // Empty hash
-        
-        // Increment milestone count
-        self.milestone_count.write(startup_id, milestone_id + 1);
-        
-        // Emit event
-        self.emit(MilestoneAdded {
-            startup_id,
-            milestone_id,
-            title,
-            fund_amount
-        });
-    }
+        i = i + 1;
+    };
+    
+    // Check if there are enough funds available
+    let collected = self.startup_collected.read(startup_id);
+    let total_with_new = total_milestone_funds + fund_amount;
+    
+    // Ensure there are enough funds for this milestone
+    let is_insufficient = collected - total_with_new;
+    let check_result = is_insufficient + collected;
+    assert(check_result == collected, 'Not enough funds available');
+    // Get next milestone ID
+    let milestone_id = milestone_count;
+    
+    // Store milestone data
+    self.milestone_title.write((startup_id, milestone_id), title);
+    self.milestone_description.write((startup_id, milestone_id), description);
+    self.milestone_fund_amount.write((startup_id, milestone_id), fund_amount);
+    self.milestone_is_completed.write((startup_id, milestone_id), false);
+    self.milestone_proof_hash.write((startup_id, milestone_id), 0); // Empty hash
+    
+    // Increment milestone count
+    self.milestone_count.write(startup_id, milestone_id + 1);
+    
+    // Emit event
+    self.emit(MilestoneAdded {
+        startup_id,
+        milestone_id,
+        title,
+        fund_amount
+    });
+}
 
     // Complete a milestone
     #[external(v0)]
@@ -442,6 +527,235 @@ fn fund_loan(ref self: ContractState, id: felt252, amount: felt252) {
         amount
     });
 }
+
+// ERC721 core functions
+#[external(v0)]
+fn name(self: @ContractState) -> felt252 {
+    self._name.read()
+}
+
+#[external(v0)]
+fn symbol(self: @ContractState) -> felt252 {
+    self._symbol.read()
+}
+
+#[external(v0)]
+fn token_uri(self: @ContractState, token_id: felt252) -> felt252 {
+    assert(InternalFunctions::_exists(self, token_id), 'ERC721: URI query');
+    self._token_uri.read(token_id)
+}
+
+
+#[external(v0)]
+fn balance_of(self: @ContractState, owner: ContractAddress) -> felt252 {
+    assert(owner.into() != 0, 'ERC721: balance query');
+    
+    // Count tokens owned by this address
+    let mut count = 0;
+    let total_tokens = self._next_token_id.read();
+    let mut i = 0;
+    
+    loop {
+        if i == total_tokens {
+            break;
+        }
+        
+        if self._token_owner.read(i) == owner && !self.token_burned.read(i) {
+            count += 1;
+        }
+        
+        i += 1;
+    };
+    
+    count
+}
+
+#[external(v0)]
+fn owner_of(self: @ContractState, token_id: felt252) -> ContractAddress {
+    let owner = self._token_owner.read(token_id);
+    assert(owner.into() != 0, 'ERC721: owner query');
+    owner
+}
+
+
+// Fund a startup with a specific amount and mint NFT
+#[external(v0)]
+fn fund_startup(ref self: ContractState, id: felt252, amount: felt252) {
+    let funder = get_caller_address();
+    
+    // Validate startup exists
+    let owner = self.startup_owner.read(id);
+    let owner_zero: felt252 = owner.into();
+    assert(owner_zero != 0, 'Startup does not exist');
+    
+    // Update funder amount
+    let current_funder_amount = self.funder_amount.read((id, funder));
+    self.funder_amount.write((id, funder), current_funder_amount + amount);
+    
+    // Update total collected
+    let collected = self.startup_collected.read(id);
+    self.startup_collected.write(id, collected + amount);
+    
+    // Mint NFT for the investor
+    let token_id = InternalFunctions::_mint_investment_nft(ref self, funder, id, amount);
+    
+    // Emit event
+    self.emit(StartupFunded {
+        id,
+        funder,
+        amount
+    });
+    
+    self.emit(InvestmentNFTMinted {
+        investor: funder,
+        startup_id: id,
+        token_id,
+        amount
+    });
+}
+
+// Add equity holder to a startup
+#[external(v0)]
+fn add_equity_holder(
+    ref self: ContractState,
+    startup_id: felt252,
+    name: felt252,
+    percentage: felt252
+) {
+    let caller = get_caller_address();
+    let owner = self.startup_owner.read(startup_id);
+    
+    // Only owner can add equity holders
+    assert(caller == owner, 'owner can add EH');
+    
+    // Get next equity holder ID
+    let holder_id = self.equity_holder_count.read(startup_id);
+    
+    // Store equity holder data
+    self.equity_holder_name.write((startup_id, holder_id), name);
+    self.equity_holder_percentage.write((startup_id, holder_id), percentage);
+    
+    // Increment equity holder count
+    self.equity_holder_count.write(startup_id, holder_id + 1);
+}
+
+// Get equity holders for a startup
+#[external(v0)]
+fn get_equity_holder_count(self: @ContractState, startup_id: felt252) -> felt252 {
+    self.equity_holder_count.read(startup_id)
+}
+
+#[external(v0)]
+fn get_equity_holder_name(self: @ContractState, startup_id: felt252, holder_id: felt252) -> felt252 {
+    self.equity_holder_name.read((startup_id, holder_id))
+}
+
+#[external(v0)]
+fn get_equity_holder_percentage(self: @ContractState, startup_id: felt252, holder_id: felt252) -> felt252 {
+    self.equity_holder_percentage.read((startup_id, holder_id))
+}
+
+
+// Withdraw funds from a startup campaign
+#[external(v0)]
+fn withdraw_funds(ref self: ContractState, id: felt252) {
+    let caller = get_caller_address();
+    let owner = self.startup_owner.read(id);
+    
+    // Only owner can withdraw funds
+    assert(caller == owner, 'Only owner');
+    
+    // Calculate available funds (collected minus already released)
+    let collected = self.startup_collected.read(id);
+    let released = self.startup_released.read(id);
+    let available = collected - released;
+    
+    // Ensure there are funds to withdraw
+    assert(available != 0, 'No funds');
+    
+    // Update released amount
+    self.startup_released.write(id, collected);
+    
+    // Emit event
+    self.emit(FundsReleased {
+        startup_id: id,
+        recipient: owner,
+        amount: available
+    });
+}
+
+// Refund investment if funding target is not met
+#[external(v0)]
+fn refund_investment(ref self: ContractState, startup_id: felt252) {
+    let investor = get_caller_address();
+    
+    // Check if investor has invested in this startup
+    let amount = self.funder_amount.read((startup_id, investor));
+    assert(amount != 0, 'No investment to refund');
+    
+    // Reset investor's amount
+    self.funder_amount.write((startup_id, investor), 0);
+    
+    // Burn investor's NFTs for this startup
+    let token_count = self.investor_token_count.read((investor, startup_id));
+    let mut i = 0;
+    
+    loop {
+        if i == token_count {
+            break;
+        }
+        
+        let token_id = self.investor_tokens.read((investor, i));
+        
+        // Only burn if not already burned
+        if !self.token_burned.read(token_id) {
+            // Mark as burned
+            self.token_burned.write(token_id, true);
+            
+            // Emit event
+            self.emit(InvestmentNFTBurned {
+                token_id
+            });
+        }
+        
+        i += 1;
+    };
+    
+    // Reset token count
+    self.investor_token_count.write((investor, startup_id), 0);
+    
+    // Emit refund event
+    self.emit(StartupFunded {
+        id: startup_id,
+        funder: investor,
+        amount: -amount // Negative amount indicates refund
+    });
+}
+// Burn an NFT
+#[external(v0)]
+fn burn_investment_nft(ref self: ContractState, token_id: felt252) {
+    let caller = get_caller_address();
+    
+    // Check if token exists and caller is owner
+    let owner = self._token_owner.read(token_id);
+    assert(owner.into() != 0, 'ERC721: burn query');
+    assert(owner == caller, 'ERC721: burn caller');
+    
+    // Mark token as burned
+    self.token_burned.write(token_id, true);
+    
+    // Emit events
+    self.emit(Transfer {
+        from: owner,
+        to: contract_address_const::<0>(),
+        token_id
+    });
+    
+    self.emit(InvestmentNFTBurned {
+        token_id
+    });
+}
+
 
 // Repay a loan
 #[external(v0)]
