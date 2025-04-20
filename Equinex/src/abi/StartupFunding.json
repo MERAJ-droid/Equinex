@@ -1,0 +1,860 @@
+[
+    {
+      "type": "constructor",
+      "name": "constructor",
+      "inputs": []
+    },
+    {
+      "type": "function",
+      "name": "set_verifier",
+      "inputs": [
+        {
+          "name": "_verifier",
+          "type": "ContractAddress"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "create_startup",
+        "inputs": [
+          {
+            "name": "_title",
+            "type": "felt"
+          },
+          {
+            "name": "_description",
+            "type": "felt"
+          },
+          {
+            "name": "_target",
+            "type": "felt"
+          },
+          {
+            "name": "_deadline",
+            "type": "felt"
+          },
+          {
+            "name": "_image",
+            "type": "felt"
+          },
+          {
+            "name": "_pitch_video",
+            "type": "felt"
+          },
+          {
+            "name": "_equity_holders",
+            "type": "felt"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "felt"
+          }
+        ],
+        "stateMutability": "nonpayable"
+      },
+    {
+      "type": "function",
+      "name": "verify_startup",
+      "inputs": [
+        {
+          "name": "_id",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "add_startup_document",
+      "inputs": [
+        {
+          "name": "_id",
+          "type": "felt252"
+        },
+        {
+          "name": "_ipfs_hash",
+          "type": "felt"
+        },
+        {
+          "name": "_document_type",
+          "type": "felt"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "add_startup_milestone",
+      "inputs": [
+        {
+          "name": "_id",
+          "type": "felt252"
+        },
+        {
+          "name": "_title",
+          "type": "felt"
+        },
+        {
+          "name": "_description",
+          "type": "felt"
+        },
+        {
+          "name": "_fund_amount",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "complete_milestone",
+      "inputs": [
+        {
+          "name": "_startup_id",
+          "type": "felt252"
+        },
+        {
+          "name": "_milestone_id",
+          "type": "felt252"
+        },
+        {
+          "name": "_proof_ipfs_hash",
+          "type": "felt"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "fund_startup",
+        "inputs": [
+          {
+            "name": "_id",
+            "type": "felt"
+          },
+          {
+            "name": "_amount",
+            "type": "felt"
+          }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+      },
+    {
+      "type": "function",
+      "name": "burn_investment_nft",
+      "inputs": [
+        {
+          "name": "_token_id",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "get_investor_tokens",
+      "inputs": [
+        {
+          "name": "_investor",
+          "type": "ContractAddress"
+        },
+        {
+          "name": "_startup_id",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "felt252[]"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "withdraw_funds",
+      "inputs": [
+        {
+          "name": "_id",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "refund_investment",
+      "inputs": [
+        {
+          "name": "_startup_id",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "get_funders",
+      "inputs": [
+        {
+          "name": "_id",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "Funder[]"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "get_equity_holders",
+      "inputs": [
+        {
+          "name": "_id",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "EquityHolder[]"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "get_startup_documents",
+      "inputs": [
+        {
+          "name": "_id",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "Document[]"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "get_startup_milestones",
+      "inputs": [
+        {
+          "name": "_id",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "Milestone[]"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "get_startups",
+      "inputs": [],
+      "outputs": [
+        {
+          "type": "Startup[]"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "request_loan",
+        "inputs": [
+          {
+            "name": "_name",
+            "type": "felt"
+          },
+          {
+            "name": "_purpose",
+            "type": "felt"
+          },
+          {
+            "name": "_amount",
+            "type": "felt"
+          },
+          {
+            "name": "_duration",
+            "type": "felt"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "felt"
+          }
+        ],
+        "stateMutability": "nonpayable"
+      },
+    {
+      "type": "function",
+      "name": "add_loan_document",
+      "inputs": [
+        {
+          "name": "_id",
+          "type": "felt252"
+        },
+        {
+          "name": "_ipfs_hash",
+          "type": "felt"
+        },
+        {
+          "name": "_document_type",
+          "type": "felt"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "fund_loan",
+      "inputs": [
+        {
+          "name": "_id",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "payable"
+    },
+    {
+      "type": "function",
+      "name": "withdraw_loan_funds",
+      "inputs": [
+        {
+          "name": "_id",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "repay_loan",
+      "inputs": [
+        {
+          "name": "_id",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "payable"
+    },
+    {
+      "type": "function",
+      "name": "get_loan_documents",
+      "inputs": [
+        {
+          "name": "_id",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "Document[]"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "get_lenders",
+      "inputs": [
+        {
+          "name": "_id",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "Funder[]"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "get_loan_requests",
+      "inputs": [],
+      "outputs": [
+        {
+          "type": "LoanRequest[]"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "token_uri",
+      "inputs": [
+        {
+          "name": "token_id",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "felt"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "has_investment_in",
+      "inputs": [
+        {
+          "name": "_investor",
+          "type": "ContractAddress"
+        },
+        {
+          "name": "_startup_id",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "get_investment_amount",
+      "inputs": [
+        {
+          "name": "_investor",
+          "type": "ContractAddress"
+        },
+        {
+          "name": "_startup_id",
+          "type": "felt252"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "felt252"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "struct",
+      "name": "Funder",
+      "members": [
+        {
+          "name": "funder_address",
+          "type": "ContractAddress"
+        },
+        {
+          "name": "amount",
+          "type": "felt252"
+        },
+        {
+          "name": "token_id",
+          "type": "felt252"
+        }
+      ]
+    },
+    {
+      "type": "struct",
+      "name": "EquityHolder",
+      "members": [
+        {
+          "name": "name",
+          "type": "felt"
+        },
+        {
+          "name": "percentage",
+          "type": "felt252"
+        }
+      ]
+    },
+    {
+        "type": "struct",
+        "name": "Document",
+        "members": [
+          {
+            "name": "ipfs_hash",
+            "type": "felt"
+          },
+          {
+            "name": "document_type",
+            "type": "felt"
+          }
+        ]
+      },
+      {
+        "type": "struct",
+        "name": "Milestone",
+        "members": [
+          {
+            "name": "title",
+            "type": "felt"
+          },
+          {
+            "name": "description",
+            "type": "felt"
+          },
+          {
+            "name": "fund_amount",
+            "type": "felt"
+          },
+          {
+            "name": "is_completed",
+            "type": "bool"
+          },
+          {
+            "name": "ipfs_hash",
+            "type": "felt"
+          }
+        ]
+      },
+    {
+      "type": "struct",
+      "name": "Startup",
+      "members": [
+        {
+          "name": "owner",
+          "type": "ContractAddress"
+        },
+        {
+          "name": "title",
+          "type": "felt"
+        },
+        {
+          "name": "description",
+          "type": "felt"
+        },
+        {
+          "name": "equity_holders",
+          "type": "EquityHolder[]"
+        },
+        {
+          "name": "pitch_video",
+          "type": "felt"
+        },
+        {
+          "name": "image",
+          "type": "felt"
+        },
+        {
+          "name": "target",
+          "type": "felt252"
+        },
+        {
+          "name": "deadline",
+          "type": "u64"
+        },
+        {
+          "name": "amount_collected",
+          "type": "felt252"
+        },
+        {
+          "name": "amount_released",
+          "type": "felt252"
+        },
+        {
+          "name": "funders",
+          "type": "Funder[]"
+        },
+        {
+          "name": "document_hashes",
+          "type": "Document[]"
+        },
+        {
+          "name": "milestones",
+          "type": "Milestone[]"
+        },
+        {
+          "name": "is_verified",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "type": "struct",
+      "name": "LoanRequest",
+      "members": [
+        {
+          "name": "requester",
+          "type": "ContractAddress"
+        },
+        {
+          "name": "name",
+          "type": "felt"
+        },
+        {
+          "name": "purpose",
+          "type": "felt"
+        },
+        {
+          "name": "amount",
+          "type": "felt252"
+        },
+        {
+          "name": "duration",
+          "type": "u64"
+        },
+        {
+          "name": "amount_collected",
+          "type": "felt252"
+        },
+        {
+          "name": "lenders",
+          "type": "Funder[]"
+        },
+        {
+          "name": "document_hashes",
+          "type": "Document[]"
+        },
+        {
+          "name": "repaid",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+    "type": "event",
+    "name": "InvestmentNFTMinted",
+    "keys": [],
+    "data": [
+      {
+        "name": "investor",
+        "type": "ContractAddress"
+      },
+      {
+        "name": "startup_id",
+        "type": "felt252"
+      },
+      {
+        "name": "token_id",
+        "type": "felt252"
+      },
+      {
+        "name": "amount",
+        "type": "felt252"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "InvestmentNFTBurned",
+    "keys": [],
+    "data": [
+      {
+        "name": "token_id",
+        "type": "felt252"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "Transfer",
+    "keys": [],
+    "data": [
+      {
+        "name": "from",
+        "type": "ContractAddress"
+      },
+      {
+        "name": "to",
+        "type": "ContractAddress"
+      },
+      {
+        "name": "token_id",
+        "type": "felt252"
+      }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "name",
+    "inputs": [],
+    "outputs": [
+      {
+        "type": "felt"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "symbol",
+    "inputs": [],
+    "outputs": [
+      {
+        "type": "felt"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "balance_of",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "ContractAddress"
+      }
+    ],
+    "outputs": [
+      {
+        "type": "felt252"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "owner_of",
+    "inputs": [
+      {
+        "name": "token_id",
+        "type": "felt252"
+      }
+    ],
+    "outputs": [
+      {
+        "type": "ContractAddress"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "get_approved",
+    "inputs": [
+      {
+        "name": "token_id",
+        "type": "felt252"
+      }
+    ],
+    "outputs": [
+      {
+        "type": "ContractAddress"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "is_approved_for_all",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "ContractAddress"
+      },
+      {
+        "name": "operator",
+        "type": "ContractAddress"
+      }
+    ],
+    "outputs": [
+      {
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "approve",
+    "inputs": [
+      {
+        "name": "to",
+        "type": "ContractAddress"
+      },
+      {
+        "name": "token_id",
+        "type": "felt252"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "set_approval_for_all",
+    "inputs": [
+      {
+        "name": "operator",
+        "type": "ContractAddress"
+      },
+      {
+        "name": "approved",
+        "type": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "transfer_from",
+    "inputs": [
+      {
+        "name": "from",
+        "type": "ContractAddress"
+      },
+      {
+        "name": "to",
+        "type": "ContractAddress"
+      },
+      {
+        "name": "token_id",
+        "type": "felt252"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "safe_transfer_from",
+    "inputs": [
+      {
+        "name": "from",
+        "type": "ContractAddress"
+      },
+      {
+        "name": "to",
+        "type": "ContractAddress"
+      },
+      {
+        "name": "token_id",
+        "type": "felt252"
+      },
+      {
+        "name": "data",
+        "type": "felt[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  }
+]

@@ -1,0 +1,942 @@
+// SPDX-License-Identifier: MIT
+#[starknet::contract]
+mod StartupFunding {
+    use starknet::ContractAddress;
+    use starknet::get_caller_address;
+    use starknet::get_block_timestamp;
+    use starknet::contract_address_const;
+    use starknet::contract_address_to_felt252;
+    use starknet::felt252_to_contract_address;
+    use array::ArrayTrait;
+    use option::OptionTrait;
+    use traits::Into;
+    use traits::TryInto;
+    use zeroable::Zeroable;
+    use integer::u256_from_felt252;
+    use integer::U256TryIntoFelt252;
+    use starknet::event::EventEmitter;
+    use starknet::storage_access::StorageAccess;
+    use starknet::class_hash::ClassHash;
+    use starknet::SyscallResultTrait;
+    use box::BoxTrait;
+    use serde::Serde;
+    use hash::LegacyHash;
+
+    // ERC721 imports
+    use openzeppelin::token::erc721::ERC721;
+    use openzeppelin::introspection::src5::SRC5;
+    use openzeppelin::token::erc721::ERC721Component;
+    use openzeppelin::token::erc721::ERC721Component::ERC721Impl;
+    use openzeppelin::token::erc721::ERC721Component::ERC721MetadataImpl;
+    use openzeppelin::token::erc721::ERC721Component::InternalImpl;
+
+    #[storage]
+    struct Storage {
+        _next_token_id: u256,
+        startups: LegacyMap::<u256, Startup>,
+        loan_requests: LegacyMap::<u256, LoanRequest>,
+        investor_total_amount: LegacyMap::<(ContractAddress, u256), u256>,
+        token_burned: LegacyMap::<u256, bool>,
+        verifier: ContractAddress,
+        number_of_startups: u256,
+        number_of_loans: u256,
+        // ERC721 storage
+        _erc721: ERC721Component::Storage,
+    }
+
+    #[derive(Drop, Serde)]
+    struct Funder {
+        funder_address: ContractAddress,
+        amount: u256,
+        token_id: u256,
+    }
+
+    #[derive(Drop, Serde)]
+    struct EquityHolder {
+        name: felt252,
+        percentage: u256,
+    }
+
+    #[derive(Drop, Serde)]
+    struct Document {
+        ipfs_hash: felt252,
+        document_type: felt252,
+        timestamp: u64,
+    }
+
+    #[derive(Drop, Serde)]
+    struct Milestone {
+        title: felt252,
+        description: felt252,
+        fund_amount: u256,
+        is_completed: bool,
+        ipfs_hash: felt252,
+        completion_timestamp: u64,
+    }
+
+    #[derive(Drop, Serde)]
+    struct Startup {
+        owner: ContractAddress,
+        title: felt252,
+        description: felt252,
+        equity_holders: Array<EquityHolder>,
+        pitch_video: felt252,
+        image: felt252,
+        target: u256,
+        deadline: u64,
+        amount_collected: u256,
+        amount_released: u256,
+        funders: Array<Funder>,
+        document_hashes: Array<Document>,
+        milestones: Array<Milestone>,
+        is_verified: bool,
+    }
+
+    #[derive(Drop, Serde)]
+    struct LoanRequest {
+        requester: ContractAddress,
+        name: felt252,
+        purpose: felt252,
+        amount: u256,
+        duration: u64,
+        amount_collected: u256,
+        lenders: Array<Funder>,
+        document_hashes: Array<Document>,
+        repaid: bool,
+    }
+
+    #[event]
+    #[derive(Drop, starknet::Event)]
+    enum Event {
+        InvestmentNFTMinted: InvestmentNFTMinted,
+        InvestmentNFTBurned: InvestmentNFTBurned,
+        // ERC721 events
+        Transfer: ERC721Component::Event,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct InvestmentNFTMinted {
+        investor: ContractAddress,
+        startup_id: u256,
+        token_id: u256,
+        amount: u256,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct InvestmentNFTBurned {
+        token_id: u256,
+    }
+
+    #[constructor]
+    fn constructor(ref self: ContractState) {
+        // Initialize ERC721
+        let mut erc721_state = self._erc721.write();
+        ERC721Impl::initializer(ref erc721_state, 'NyveX Investment Certificate', 'NYVEX');
+        
+        // Set the contract deployer as verifier
+        self.verifier.write(get_caller_address());
+        self.number_of_startups.write(0);
+        self.number_of_loans.write(0);
+        self._next_token_id.write(0);
+    }
+
+    #[external(v0)]
+    impl StartupFundingImpl of IStartupFunding<ContractState> {
+        // Set a new verifier
+        fn set_verifier(ref self: ContractState, _verifier: ContractAddress) {
+            assert(get_caller_address() == self.verifier.read(), 'Only verifier can set new verifier');
+            self.verifier.write(_verifier);
+        }
+
+        // Create a new startup campaign
+        fn create_startup(
+            ref self: ContractState,
+            _owner: ContractAddress,
+            _title: felt252,
+            _description: felt252,
+            _equity_holders: Array<EquityHolder>,
+            _pitch_video: felt252,
+            _image: felt252,
+            _target: u256,
+            _deadline: u64
+        ) -> u256 {
+            assert(_deadline > get_block_timestamp(), 'Deadline must be in future');
+
+            let startup_id = self.number_of_startups.read();
+            
+            // Create new startup
+            let mut startup = Startup {
+                owner: _owner,
+                title: _title,
+                description: _description,
+                equity_holders: _equity_holders,
+                pitch_video: _pitch_video,
+                image: _image,
+                target: _target,
+                deadline: _deadline,
+                amount_collected: 0.into(),
+                amount_released: 0.into(),
+                funders: ArrayTrait::new(),
+                document_hashes: ArrayTrait::new(),
+                milestones: ArrayTrait::new(),
+                is_verified: false,
+            };
+            
+            // Store the startup
+            self.startups.write(startup_id, startup);
+            
+            // Increment startup count
+            self.number_of_startups.write(startup_id + 1.into());
+            
+            return startup_id;
+        }
+
+        // Verify a startup
+        fn verify_startup(ref self: ContractState, _id: u256) {
+            assert(get_caller_address() == self.verifier.read(), 'Only verifier can verify');
+            
+            let mut startup = self.startups.read(_id);
+            startup.is_verified = true;
+            self.startups.write(_id, startup);
+        }
+
+        // Add a document to a startup
+        fn add_startup_document(
+            ref self: ContractState,
+            _id: u256,
+            _ipfs_hash: felt252,
+            _document_type: felt252
+        ) {
+            let startup = self.startups.read(_id);
+            let caller = get_caller_address();
+            
+            assert(
+                caller == startup.owner || caller == self.verifier.read(),
+                'Only owner or verifier can add'
+            );
+
+            let new_document = Document {
+                ipfs_hash: _ipfs_hash,
+                document_type: _document_type,
+                timestamp: get_block_timestamp(),
+            };
+
+            let mut updated_startup = startup;
+            updated_startup.document_hashes.append(new_document);
+            self.startups.write(_id, updated_startup);
+        }
+
+        // Add a milestone to a startup
+        fn add_startup_milestone(
+            ref self: ContractState,
+            _id: u256,
+            _title: felt252,
+            _description: felt252,
+            _fund_amount: u256
+        ) {
+            let startup = self.startups.read(_id);
+            assert(get_caller_address() == startup.owner, 'Only owner can add milestones');
+
+            // Calculate total milestone funds
+            let mut total_milestone_funds = 0.into();
+            let mut i = 0;
+            while i < startup.milestones.len() {
+                let milestone = startup.milestones.at(i);
+                total_milestone_funds += milestone.fund_amount;
+                i += 1;
+            }
+            
+            assert(
+                total_milestone_funds + _fund_amount <= startup.amount_collected,
+                'Not enough funds available'
+            );
+
+            let new_milestone = Milestone {
+                title: _title,
+                description: _description,
+                fund_amount: _fund_amount,
+                is_completed: false,
+                ipfs_hash: 0, // Empty string
+                completion_timestamp: 0,
+            };
+
+            let mut updated_startup = startup;
+            updated_startup.milestones.append(new_milestone);
+            self.startups.write(_id, updated_startup);
+        }
+
+        // Complete a milestone
+        fn complete_milestone(
+            ref self: ContractState,
+            _startup_id: u256,
+            _milestone_id: u256,
+            _proof_ipfs_hash: felt252
+        ) {
+            assert(get_caller_address() == self.verifier.read(), 'Only verifier can complete');
+            
+            let startup = self.startups.read(_startup_id);
+            assert(_milestone_id < startup.milestones.len().into(), 'Invalid milestone ID');
+            
+            let milestone = startup.milestones.at(_milestone_id.try_into().unwrap());
+            assert(!milestone.is_completed, 'Milestone already completed');
+            
+            let mut updated_startup = startup;
+            let mut updated_milestone = milestone;
+            updated_milestone.is_completed = true;
+            updated_milestone.ipfs_hash = _proof_ipfs_hash;
+            updated_milestone.completion_timestamp = get_block_timestamp();
+            
+            // Update the milestone in the array
+            let mut new_milestones = ArrayTrait::new();
+            let mut i = 0;
+            while i < updated_startup.milestones.len() {
+                if i == _milestone_id.try_into().unwrap() {
+                    new_milestones.append(updated_milestone);
+                } else {
+                    new_milestones.append(*updated_startup.milestones.at(i));
+                }
+                i += 1;
+            }
+            updated_startup.milestones = new_milestones;
+            
+            // Release funds for this milestone
+            updated_startup.amount_released += milestone.fund_amount;
+            self.startups.write(_startup_id, updated_startup);
+            
+            // Transfer funds to the startup owner
+            // Note: In Cairo, we use starknet::send_eth_transfer for this
+            starknet::send_eth_transfer(startup.owner, milestone.fund_amount);
+        }
+
+        // Fund a startup campaign and mint an NFT as proof of investment
+        #[payable]
+        fn fund_startup(ref self: ContractState, _id: u256) {
+            let amount = starknet::get_tx_info().unbox().value;
+            let mut startup = self.startups.read(_id);
+
+            assert(get_block_timestamp() < startup.deadline, 'Funding period has ended');
+            assert(
+                startup.amount_collected < startup.target,
+                'Funding target reached'
+            );
+
+            // Mint NFT for the investor
+            let investor = get_caller_address();
+            let new_token_id = self._mint_investment_nft(investor, _id, amount, startup.title, startup.image);
+            
+            // Update investor's total amount for this startup
+            let current_amount = self.investor_total_amount.read((investor, _id));
+            self.investor_total_amount.write((investor, _id), current_amount + amount);
+            
+            // Add funder with token ID
+            let new_funder = Funder {
+                funder_address: investor,
+                amount: amount,
+                token_id: new_token_id,
+            };
+            
+            let mut updated_startup = startup;
+            updated_startup.funders.append(new_funder);
+            updated_startup.amount_collected += amount;
+            self.startups.write(_id, updated_startup);
+            
+            // Emit event
+            self.emit(InvestmentNFTMinted {
+                investor: investor,
+                startup_id: _id,
+                token_id: new_token_id,
+                amount: amount,
+            });
+        }
+
+        // Burn NFT if investment is refunded
+        fn burn_investment_nft(ref self: ContractState, _token_id: u256) {
+            let caller = get_caller_address();
+            let mut erc721_state = self._erc721.write();
+            
+            // Check if token exists and caller is owner or verifier
+            assert(
+                ERC721Impl::owner_of(@erc721_state, _token_id) == caller || caller == self.verifier.read(),
+                'Only token owner or verifier'
+            );
+            
+            // Burn the token
+            InternalImpl::_burn(ref erc721_state, _token_id);
+            self.token_burned.write(_token_id, true);
+            
+            // Emit event
+            self.emit(InvestmentNFTBurned { token_id: _token_id });
+        }
+
+        // Get investor's NFT tokens for a specific startup
+        fn get_investor_tokens(
+            self: @ContractState, 
+            _investor: ContractAddress, 
+            _startup_id: u256
+        ) -> Array<u256> {
+            let startup = self.startups.read(_startup_id);
+            
+            // Count tokens for this investor
+            let mut token_count = 0;
+            let mut i = 0;
+            while i < startup.funders.len() {
+                let funder = startup.funders.at(i);
+                if funder.funder_address == _investor && !self.token_burned.read(funder.token_id) {
+                    token_count += 1;
+                }
+                i += 1;
+            }
+            
+            // Create array of token IDs
+            let mut tokens = ArrayTrait::new();
+            let mut i = 0;
+            let mut index = 0;
+            
+            while i < startup.funders.len() {
+                let funder = startup.funders.at(i);
+                if funder.funder_address == _investor && !self.token_burned.read(funder.token_id) {
+                    tokens.append(funder.token_id);
+                    index += 1;
+                }
+                i += 1;
+            }
+                    return tokens;
+        }
+
+        // Withdraw funds from a startup campaign after the deadline has passed
+        fn withdraw_funds(ref self: ContractState, _id: u256) {
+            let startup = self.startups.read(_id);
+            assert(
+                get_caller_address() == startup.owner,
+                'Only the owner can withdraw'
+            );
+            assert(
+                get_block_timestamp() > startup.deadline,
+                'Cannot withdraw before deadline'
+            );
+            assert(
+                startup.amount_collected >= startup.target,
+                'Funding target not met'
+            );
+
+            // Calculate available funds (collected minus already released)
+            let available_funds = startup.amount_collected - startup.amount_released;
+            assert(available_funds > 0, 'No funds available to withdraw');
+
+            // Update the released amount
+            let mut updated_startup = startup;
+            updated_startup.amount_released += available_funds;
+            self.startups.write(_id, updated_startup);
+
+            // Transfer the funds
+            starknet::send_eth_transfer(startup.owner, available_funds);
+        }
+
+        // Refund if funding target is not met by deadline
+        fn refund_investment(ref self: ContractState, _startup_id: u256) {
+            let startup = self.startups.read(_startup_id);
+            assert(
+                get_block_timestamp() > startup.deadline,
+                'Cannot refund before deadline'
+            );
+            assert(
+                startup.amount_collected < startup.target,
+                'Funding target was met, no refunds'
+            );
+            
+            let investor = get_caller_address();
+            
+            // Find all investments by this investor
+            let mut total_investment = 0.into();
+            let mut token_ids = ArrayTrait::new();
+            
+            let mut i = 0;
+            while i < startup.funders.len() {
+                let funder = startup.funders.at(i);
+                if funder.funder_address == investor {
+                    total_investment += funder.amount;
+                    token_ids.append(funder.token_id);
+                }
+                i += 1;
+            }
+            
+            assert(total_investment > 0, 'No investment found for refund');
+            
+            // Burn all NFTs for this investor
+            let mut erc721_state = self._erc721.write();
+            let mut i = 0;
+            while i < token_ids.len() {
+                let token_id = *token_ids.at(i);
+                if ERC721Impl::_exists(@erc721_state, token_id) && !self.token_burned.read(token_id) {
+                    InternalImpl::_burn(ref erc721_state, token_id);
+                    self.token_burned.write(token_id, true);
+                    self.emit(InvestmentNFTBurned { token_id: token_id });
+                }
+                i += 1;
+            }
+            
+            // Refund the investment
+            starknet::send_eth_transfer(investor, total_investment);
+        }
+
+        // Get the funders of a specific startup campaign
+        fn get_funders(self: @ContractState, _id: u256) -> Array<Funder> {
+            let startup = self.startups.read(_id);
+            return startup.funders;
+        }
+
+        // Get the equity holders of a specific startup
+        fn get_equity_holders(self: @ContractState, _id: u256) -> Array<EquityHolder> {
+            let startup = self.startups.read(_id);
+            return startup.equity_holders;
+        }
+
+        // Get the documents of a specific startup
+        fn get_startup_documents(self: @ContractState, _id: u256) -> Array<Document> {
+            let startup = self.startups.read(_id);
+            return startup.document_hashes;
+        }
+
+        // Get the milestones of a specific startup
+        fn get_startup_milestones(self: @ContractState, _id: u256) -> Array<Milestone> {
+            let startup = self.startups.read(_id);
+            return startup.milestones;
+        }
+
+        // Get all startups
+        fn get_startups(self: @ContractState) -> Array<Startup> {
+            let mut all_startups = ArrayTrait::new();
+            let num_startups = self.number_of_startups.read();
+            
+            let mut i: u256 = 0;
+            while i < num_startups {
+                let startup = self.startups.read(i);
+                all_startups.append(startup);
+                i += 1.into();
+            }
+
+            return all_startups;
+        }
+
+        // Create a new loan request
+        fn request_loan(
+            ref self: ContractState,
+            _requester: ContractAddress,
+            _name: felt252,
+            _purpose: felt252,
+            _amount: u256,
+            _duration: u64
+        ) -> u256 {
+            let loan_id = self.number_of_loans.read();
+            
+            let loan_request = LoanRequest {
+                requester: _requester,
+                name: _name,
+                purpose: _purpose,
+                amount: _amount,
+                duration: _duration,
+                amount_collected: 0.into(),
+                lenders: ArrayTrait::new(),
+                document_hashes: ArrayTrait::new(),
+                repaid: false,
+            };
+
+            self.loan_requests.write(loan_id, loan_request);
+            self.number_of_loans.write(loan_id + 1.into());
+
+            return loan_id;
+        }
+
+        // Add a document to a loan
+        fn add_loan_document(
+            ref self: ContractState,
+            _id: u256,
+            _ipfs_hash: felt252,
+            _document_type: felt252
+        ) {
+            let loan_request = self.loan_requests.read(_id);
+            let caller = get_caller_address();
+            
+            assert(
+                caller == loan_request.requester || caller == self.verifier.read(),
+                'Only requester or verifier'
+            );
+
+            let new_document = Document {
+                ipfs_hash: _ipfs_hash,
+                document_type: _document_type,
+                timestamp: get_block_timestamp(),
+            };
+
+            let mut updated_loan = loan_request;
+            updated_loan.document_hashes.append(new_document);
+            self.loan_requests.write(_id, updated_loan);
+        }
+
+        // Fund a loan request
+        #[payable]
+        fn fund_loan(ref self: ContractState, _id: u256) {
+            let amount = starknet::get_tx_info().unbox().value;
+            let loan_request = self.loan_requests.read(_id);
+
+            assert(
+                loan_request.amount_collected < loan_request.amount,
+                'Loan fully funded'
+            );
+
+            let new_funder = Funder {
+                funder_address: get_caller_address(),
+                amount: amount,
+                token_id: 0.into(), // No NFT for loans
+            };
+
+            let mut updated_loan = loan_request;
+            updated_loan.lenders.append(new_funder);
+            updated_loan.amount_collected += amount;
+            self.loan_requests.write(_id, updated_loan);
+        }
+
+        // Withdraw loan funds by the requester
+        fn withdraw_loan_funds(ref self: ContractState, _id: u256) {
+            let loan_request = self.loan_requests.read(_id);
+            assert(
+                get_caller_address() == loan_request.requester,
+                'Only requester can withdraw'
+            );
+            assert(
+                loan_request.amount_collected >= loan_request.amount,
+                'Loan target not met'
+            );
+
+            let amount = loan_request.amount_collected;
+            
+            let mut updated_loan = loan_request;
+            updated_loan.amount_collected = 0.into();
+            self.loan_requests.write(_id, updated_loan);
+
+            starknet::send_eth_transfer(loan_request.requester, amount);
+        }
+
+        // Repay loan with interest
+        #[payable]
+        fn repay_loan(ref self: ContractState, _id: u256) {
+            let loan_request = self.loan_requests.read(_id);
+            assert(
+                get_caller_address() == loan_request.requester,
+                'Only requester can repay'
+            );
+            assert(!loan_request.repaid, 'Loan already repaid');
+
+            let repayment_amount = loan_request.amount + (loan_request.amount / 10.into()); // 10% interest
+            let amount = starknet::get_tx_info().unbox().value;
+            assert(amount >= repayment_amount, 'Insufficient repayment amount');
+
+            let mut updated_loan = loan_request;
+            updated_loan.repaid = true;
+            self.loan_requests.write(_id, updated_loan);
+
+            // Repay each lender with interest
+            let mut i = 0;
+            while i < loan_request.lenders.len() {
+                let lender = loan_request.lenders.at(i);
+                let lender_amount = lender.amount + (lender.amount / 10.into()); // 10% interest
+                starknet::send_eth_transfer(lender.funder_address, lender_amount);
+                i += 1;
+            }
+        }
+
+        // Get the documents of a specific loan
+        fn get_loan_documents(self: @ContractState, _id: u256) -> Array<Document> {
+            let loan_request = self.loan_requests.read(_id);
+            return loan_request.document_hashes;
+        }
+
+        // Get the lenders of a specific loan request
+        fn get_lenders(self: @ContractState, _id: u256) -> Array<Funder> {
+            let loan_request = self.loan_requests.read(_id);
+            return loan_request.lenders;
+        }
+
+        // Get all loan requests
+        fn get_loan_requests(self: @ContractState) -> Array<LoanRequest> {
+            let mut all_loan_requests = ArrayTrait::new();
+            let num_loans = self.number_of_loans.read();
+            
+            let mut i: u256 = 0;
+            while i < num_loans {
+                let loan_request = self.loan_requests.read(i);
+                all_loan_requests.append(loan_request);
+                i += 1.into();
+            }
+
+            return all_loan_requests;
+        }
+        
+        // Get NFT metadata for a specific token
+        fn token_uri(self: @ContractState, token_id: u256) -> felt252 {
+            let erc721_state = self._erc721.read();
+            assert(ERC721Impl::_exists(@erc721_state, token_id), 'URI query for nonexistent token');
+            return ERC721MetadataImpl::token_uri(@erc721_state, token_id);
+        }
+        
+        // Check if an address owns any investment NFTs for a specific startup
+        fn has_investment_in(self: @ContractState, _investor: ContractAddress, _startup_id: u256) -> bool {
+            let tokens = self.get_investor_tokens(_investor, _startup_id);
+            return tokens.len() > 0;
+        }
+        
+        // Get total investment amount for an investor in a specific startup
+        fn get_investment_amount(self: @ContractState, _investor: ContractAddress, _startup_id: u256) -> u256 {
+            return self.investor_total_amount.read((_investor, _startup_id));
+        }
+    }
+
+    // Internal functions
+    #[generate_trait]
+    impl InternalFunctions of InternalFunctionsTrait {
+        // Internal function to mint an NFT as proof of investment
+        fn _mint_investment_nft(
+            ref self: ContractState,
+            _investor: ContractAddress, 
+            _startup_id: u256, 
+            _amount: u256,
+            _startup_title: felt252,
+            _startup_image: felt252
+        ) -> u256 {
+            let token_id = self._next_token_id.read();
+            self._next_token_id.write(token_id + 1.into());
+            
+            // Calculate equity percentage based on investment amount and target
+            let startup = self.startups.read(_startup_id);
+            let equity_percentage = (_amount * 10000.into()) / startup.target;
+            
+            // Generate metadata URI for the NFT
+            // Note: In Cairo, we would typically store this off-chain or use a different approach
+            // For simplicity, we'll use a basic URI format here
+            let uri = self._generate_token_uri(
+                _startup_title, 
+                _startup_image, 
+                _startup_id, 
+                _amount, 
+                equity_percentage, 
+                _investor
+            );
+            
+            // Mint the token
+            let mut erc721_state = self._erc721.write();
+            InternalImpl::_mint(ref erc721_state, _investor, token_id);
+            ERC721MetadataImpl::_set_token_uri(ref erc721_state, token_id, uri);
+            
+            return token_id;
+        }
+        
+        // Generate token URI - simplified version for Cairo
+        fn _generate_token_uri(
+            self: @ContractState,
+            _startup_title: felt252,
+            _startup_image: felt252,
+            _startup_id: u256,
+            _amount: u256,
+            _equity_percentage: u256,
+            _investor: ContractAddress
+        ) -> felt252 {
+            // In a real implementation, you would generate a proper URI
+            // This is a simplified version that returns a basic identifier
+            // You would typically store the full metadata off-chain
+            return _startup_image; // Using image as URI for simplicity
+        }
+        
+        // Update NFT metadata when investor adds more funds
+        fn _update_investment_nft(
+            ref self: ContractState,
+            _token_id: u256, 
+            _startup_id: u256, 
+            _new_total_amount: u256
+        ) {
+            let mut erc721_state = self._erc721.write();
+            assert(ERC721Impl::_exists(@erc721_state, _token_id), 'Token does not exist');
+            
+            let startup = self.startups.read(_startup_id);
+            
+            // Calculate new equity percentage
+            let equity_percentage = (_new_total_amount * 10000.into()) / startup.target;
+            
+            // Generate updated URI
+            let uri = self._generate_token_uri(
+                startup.title,
+                startup.image,
+                _startup_id,
+                _new_total_amount,
+                equity_percentage,
+                ERC721Impl::owner_of(@erc721_state, _token_id)
+            );
+            
+            // Update token URI
+            ERC721MetadataImpl::_set_token_uri(ref erc721_state, _token_id, uri);
+        }
+    }
+}
+
+// Interface definition
+#[starknet::interface]
+trait IStartupFunding<TContractState> {
+    fn set_verifier(ref self: TContractState, _verifier: ContractAddress);
+    fn create_startup(
+        ref self: TContractState,
+        _owner: ContractAddress,
+        _title: felt252,
+        _description: felt252,
+        _equity_holders: Array<StartupFunding::EquityHolder>,
+        _pitch_video: felt252,
+        _image: felt252,
+        _target: u256,
+        _deadline: u64
+    ) -> u256;
+    fn verify_startup(ref self: TContractState, _id: u256);
+        fn add_startup_document(
+        ref self: TContractState,
+        _id: u256,
+        _ipfs_hash: felt252,
+        _document_type: felt252
+    );
+    fn add_startup_milestone(
+        ref self: TContractState,
+        _id: u256,
+        _title: felt252,
+        _description: felt252,
+        _fund_amount: u256
+    );
+    fn complete_milestone(
+        ref self: TContractState,
+        _startup_id: u256,
+        _milestone_id: u256,
+        _proof_ipfs_hash: felt252
+    );
+    #[payable]
+    fn fund_startup(ref self: TContractState, _id: u256);
+    fn burn_investment_nft(ref self: TContractState, _token_id: u256);
+    fn get_investor_tokens(
+        self: @TContractState, 
+        _investor: ContractAddress, 
+        _startup_id: u256
+    ) -> Array<u256>;
+    fn withdraw_funds(ref self: TContractState, _id: u256);
+    fn refund_investment(ref self: TContractState, _startup_id: u256);
+    fn get_funders(self: @TContractState, _id: u256) -> Array<StartupFunding::Funder>;
+    fn get_equity_holders(self: @TContractState, _id: u256) -> Array<StartupFunding::EquityHolder>;
+    fn get_startup_documents(self: @TContractState, _id: u256) -> Array<StartupFunding::Document>;
+    fn get_startup_milestones(self: @TContractState, _id: u256) -> Array<StartupFunding::Milestone>;
+    fn get_startups(self: @TContractState) -> Array<StartupFunding::Startup>;
+    fn request_loan(
+        ref self: TContractState,
+        _requester: ContractAddress,
+        _name: felt252,
+        _purpose: felt252,
+        _amount: u256,
+        _duration: u64
+    ) -> u256;
+    fn add_loan_document(
+        ref self: TContractState,
+        _id: u256,
+        _ipfs_hash: felt252,
+        _document_type: felt252
+    );
+    #[payable]
+    fn fund_loan(ref self: TContractState, _id: u256);
+    fn withdraw_loan_funds(ref self: TContractState, _id: u256);
+    #[payable]
+    fn repay_loan(ref self: TContractState, _id: u256);
+    fn get_loan_documents(self: @TContractState, _id: u256) -> Array<StartupFunding::Document>;
+    fn get_lenders(self: @TContractState, _id: u256) -> Array<StartupFunding::Funder>;
+    fn get_loan_requests(self: @TContractState) -> Array<StartupFunding::LoanRequest>;
+    fn token_uri(self: @TContractState, token_id: u256) -> felt252;
+    fn has_investment_in(self: @TContractState, _investor: ContractAddress, _startup_id: u256) -> bool;
+    fn get_investment_amount(self: @TContractState, _investor: ContractAddress, _startup_id: u256) -> u256;
+}
+
+// ERC721 implementation
+#[starknet::interface]
+trait IERC721<TContractState> {
+    fn name(self: @TContractState) -> felt252;
+    fn symbol(self: @TContractState) -> felt252;
+    fn token_uri(self: @TContractState, token_id: u256) -> felt252;
+    fn balance_of(self: @TContractState, account: ContractAddress) -> u256;
+    fn owner_of(self: @TContractState, token_id: u256) -> ContractAddress;
+    fn get_approved(self: @TContractState, token_id: u256) -> ContractAddress;
+    fn is_approved_for_all(self: @TContractState, owner: ContractAddress, operator: ContractAddress) -> bool;
+    fn approve(ref self: TContractState, to: ContractAddress, token_id: u256);
+    fn set_approval_for_all(ref self: TContractState, operator: ContractAddress, approved: bool);
+    fn transfer_from(ref self: TContractState, from: ContractAddress, to: ContractAddress, token_id: u256);
+    fn safe_transfer_from(
+        ref self: TContractState, 
+        from: ContractAddress, 
+        to: ContractAddress, 
+        token_id: u256, 
+        data: Span<felt252>
+    );
+}
+
+#[starknet::contract]
+impl ERC721Impl of IERC721<ContractState> {
+    fn name(self: @ContractState) -> felt252 {
+        let erc721_state = self._erc721.read();
+        ERC721Component::ERC721MetadataImpl::name(@erc721_state)
+    }
+
+    fn symbol(self: @ContractState) -> felt252 {
+        let erc721_state = self._erc721.read();
+        ERC721Component::ERC721MetadataImpl::symbol(@erc721_state)
+    }
+
+    fn token_uri(self: @ContractState, token_id: u256) -> felt252 {
+        let erc721_state = self._erc721.read();
+        ERC721Component::ERC721MetadataImpl::token_uri(@erc721_state, token_id)
+    }
+
+    fn balance_of(self: @ContractState, account: ContractAddress) -> u256 {
+        let erc721_state = self._erc721.read();
+        ERC721Component::ERC721Impl::balance_of(@erc721_state, account)
+    }
+
+    fn owner_of(self: @ContractState, token_id: u256) -> ContractAddress {
+        let erc721_state = self._erc721.read();
+        ERC721Component::ERC721Impl::owner_of(@erc721_state, token_id)
+    }
+
+    fn get_approved(self: @ContractState, token_id: u256) -> ContractAddress {
+        let erc721_state = self._erc721.read();
+        ERC721Component::ERC721Impl::get_approved(@erc721_state, token_id)
+    }
+
+    fn is_approved_for_all(self: @ContractState, owner: ContractAddress, operator: ContractAddress) -> bool {
+        let erc721_state = self._erc721.read();
+        ERC721Component::ERC721Impl::is_approved_for_all(@erc721_state, owner, operator)
+    }
+
+    fn approve(ref self: ContractState, to: ContractAddress, token_id: u256) {
+        let mut erc721_state = self._erc721.write();
+        ERC721Component::ERC721Impl::approve(ref erc721_state, to, token_id)
+    }
+
+    fn set_approval_for_all(ref self: ContractState, operator: ContractAddress, approved: bool) {
+        let mut erc721_state = self._erc721.write();
+        ERC721Component::ERC721Impl::set_approval_for_all(ref erc721_state, operator, approved)
+    }
+
+    fn transfer_from(ref self: ContractState, from: ContractAddress, to: ContractAddress, token_id: u256) {
+        let mut erc721_state = self._erc721.write();
+        ERC721Component::ERC721Impl::transfer_from(ref erc721_state, from, to, token_id)
+    }
+
+    fn safe_transfer_from(
+        ref self: ContractState, 
+        from: ContractAddress, 
+        to: ContractAddress, 
+        token_id: u256, 
+        data: Span<felt252>
+    ) {
+        let mut erc721_state = self._erc721.write();
+        ERC721Component::ERC721Impl::safe_transfer_from(ref erc721_state, from, to, token_id, data)
+    }
+}
+

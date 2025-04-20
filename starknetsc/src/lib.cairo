@@ -18,6 +18,11 @@ mod StartupFunding {
         startup_collected: LegacyMap<felt252, felt252>,
         startup_released: LegacyMap<felt252, felt252>,
         startup_is_verified: LegacyMap<felt252, bool>,
+        startup_deadline: LegacyMap<felt252, felt252>, // Deadline for the startup
+        startup_image: LegacyMap<felt252, felt252>, // Image URL
+        startup_pitch_video: LegacyMap<felt252, felt252>, // Pitch video URL
+        startup_equity_holders: LegacyMap<felt252, felt252>, // Serialized equity holders
+    
         
         // Funder tracking
         funder_amount: LegacyMap<(felt252, ContractAddress), felt252>,
@@ -254,39 +259,48 @@ impl InternalFunctions of InternalTrait {
     }
 
     #[external(v0)]
-    fn create_startup(
-        ref self: ContractState,
-        title: felt252,
-        description: felt252,
-        target: felt252,
-    ) -> felt252 {
-        let id = self.startups_count.read();
-        let owner = get_caller_address();
-        
-        // Store startup data
-        self.startup_owner.write(id, owner);
-        self.startup_title.write(id, title);
-        self.startup_description.write(id, description);
-        self.startup_target.write(id, target);
-        self.startup_collected.write(id, 0);
-        self.startup_released.write(id, 0);
-        self.startup_is_verified.write(id, false);
-        self.document_count.write(id, 0);
-        self.milestone_count.write(id, 0);
-        
-        // Increment counter
-        self.startups_count.write(id + 1);
-        
-        // Emit event
-        self.emit(StartupCreated { 
-            id, 
-            owner, 
-            title,
-        });
-        
-        id
-    }
-
+fn create_startup(
+    ref self: ContractState,
+    title: felt252,
+    description: felt252,
+    target: felt252,
+    deadline: felt252,
+    image: felt252,
+    pitch_video: felt252,
+    equity_holders: felt252, // Serialized equity holders as a single felt252 (e.g., JSON string)
+) -> felt252 {
+    let id = self.startups_count.read();
+    let owner = get_caller_address();
+    
+    // Store startup data
+    self.startup_owner.write(id, owner);
+    self.startup_title.write(id, title);
+    self.startup_description.write(id, description);
+    self.startup_target.write(id, target);
+    self.startup_collected.write(id, 0);
+    self.startup_released.write(id, 0);
+    self.startup_is_verified.write(id, false);
+    self.document_count.write(id, 0);
+    self.milestone_count.write(id, 0);
+    
+    // Store additional fields
+    self.startup_deadline.write(id, deadline);
+    self.startup_image.write(id, image);
+    self.startup_pitch_video.write(id, pitch_video);
+    self.startup_equity_holders.write(id, equity_holders);
+    
+    // Increment counter
+    self.startups_count.write(id + 1);
+    
+    // Emit event
+    self.emit(StartupCreated { 
+        id, 
+        owner, 
+        title,
+    });
+    
+    id
+}
     // Verify a startup
     #[external(v0)]
     fn verify_startup(ref self: ContractState, id: felt252) {

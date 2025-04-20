@@ -2,7 +2,7 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { CheckCircle, Clock, XCircle, Shield } from "lucide-react";
-import { useStateContext } from "@/context";
+import { useStarknetContext } from "@/context";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface VerificationBadgeProps {
@@ -16,7 +16,7 @@ export default function VerificationBadge({
   size = "md", 
   showLabel = false 
 }: VerificationBadgeProps) {
-  const { getVerificationStatus } = useStateContext();
+  const { getVerificationStatus } = useStarknetContext();
   const [status, setStatus] = React.useState<'unverified' | 'pending' | 'approved' | 'rejected'>('unverified');
   const [loading, setLoading] = React.useState(true);
 
@@ -24,7 +24,7 @@ export default function VerificationBadge({
     const fetchStatus = async () => {
       try {
         const result = await getVerificationStatus(address);
-        if (result === 'verified') {
+        if (result === 'approved') {
           setStatus('approved');
         } else {
           setStatus(result as 'unverified' | 'pending' | 'rejected');

@@ -20,7 +20,7 @@ async function deployContract() {
     "0", 
     "2819611878561038782234987028836065990456106670432080199293085121446959629452"
   ];
-  const salt = "0x01a48f6194d151d1117d1af317d5f23fce102f8b0ca31483c6c06c592a3cb153";
+  const salt = stark.randomAddress(); // Generate a new salt
   const expectedAddress = "0x012a63c2f6f70deaf46dcecb579f513d32b609f3fbbbcc07e9b35a659b4a34b9";
   
   console.log("Deploying contract...");

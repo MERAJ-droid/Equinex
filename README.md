@@ -1,2 +1,2 @@
-### Deployed Contract Address on Fuji Testnet : 0xC6a6E3c2a50B296C3E61E90b8cE26Ea5CC8AEC2A
-### Snowtrace URL : https://43113.testnet.snowtrace.io/address/0xC6a6E3c2a50B296C3E61E90b8cE26Ea5CC8AEC2A
+### Deployed Contract Address on Sepolia Testnet : 0x50fc56a9eb8293c959c95dc6bf9754d34bab7df0ba904fb85d9a2499280a3c5
+

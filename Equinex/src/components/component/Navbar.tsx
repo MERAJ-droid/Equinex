@@ -1,11 +1,12 @@
 "use client";
+
 import { useEffect, useState, useRef } from "react";
-import { ethers } from "ethers";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { useStateContext } from "@/context";
+import { useStarknetContext } from "@/context";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
+import StartupFundingABI from "@/abi/StartupFunding.json"; // Import the ABI
 import {
   AnimatePresence,
   MotionValue,
@@ -14,101 +15,118 @@ import {
   useSpring,
   useTransform,
 } from "framer-motion";
-import { 
-  IconHome, 
-  IconRocket, 
-  IconCoin, 
-  IconInfoCircle,
-  IconLayoutNavbarCollapse,
-  IconWallet ,
+import {
+  IconHome,
+  IconRocket,
   IconCopyright,
+  IconWallet,
   IconShield,
-  IconSettings
+  IconSettings,
+  IconLayoutNavbarCollapse,
 } from "@tabler/icons-react";
 
 export function Navbar() {
-  const { connect, address } = useStateContext();
+  const { starknetAddress, connectStarknet } = useStarknetContext();
   const pathname = usePathname();
-  const [balance, setBalance] = useState<string | null>(null);
+  const [starknetBalance, setStarknetBalance] = useState<string | null>(null);
 
+  const STARKNET_CONTRACT_ADDRESS = "0x2ffc54642a077281f1af9a0dee27de490d988dbd8d4e99b0bd677f053a9a876";
   useEffect(() => {
-    const fetchBalance = async () => {
-      if (address && window.ethereum) {
+    const fetchStarknetBalance = async () => {
+      if (starknetAddress) {
         try {
-          const provider = new ethers.BrowserProvider(window.ethereum);
-          const balance = await provider.getBalance(address);
-          setBalance(ethers.formatEther(balance));
+          const { Provider, Contract } = await import("starknet");
+          const provider = new Provider({ sequencer: { network: "sepolia-testnet" } });
+
+          // Initialize the contract
+          const contract = new Contract(StartupFundingABI, STARKNET_CONTRACT_ADDRESS, provider);
+
+          // Call the `balance_of` function
+          const balanceWei = await contract.balance_of(starknetAddress);
+
+          // Convert from wei to ETH
+          const balanceEth = Number(balanceWei[0]) / 10 ** 18;
+          setStarknetBalance(balanceEth.toFixed(4));
         } catch (error) {
-          console.error("Error fetching balance:", error);
+          console.error("Error fetching StarkNet balance:", error);
         }
       }
     };
 
-    fetchBalance();
-  }, [address]);
+    fetchStarknetBalance();
+  }, [starknetAddress]);
 
-  // Navigation items for the floating dock
   const navItems = [
-    {
-      title: "Home",
-      icon: <IconHome className="h-full w-full" />,
-      href: "/",
-    },
-    {
-      title: "Startups",
-      icon: <IconRocket className="h-full w-full" />,
-      href: "/startups",
-    },
-    {
-      title: "IP Assets",
-      icon: <IconCopyright className="h-full w-full" />,
-      href: "/ip-assets",
-    },
-    {
-      title: "Portfolio", 
-      icon: <IconWallet className="h-full w-full" />,
-      href: "/portfolio",
-    },
-    {
-      title: "Verification",
-      icon: <IconShield className="h-full w-full" />,
-      href: "/verification",
-    },
-    {
-      title: "Admin",
-      icon: <IconSettings className="h-full w-full" />,
-      href: "/admin/verification",
-    },
-    {
-      title: "About",
-      icon: <IconInfoCircle className="h-full w-full" />,
-      href: "/about",
-    },
+    { title: "Home", icon: <IconHome className="h-full w-full" />, href: "/" },
+    { title: "Startups", icon: <IconRocket className="h-full w-full" />, href: "/startups" },
+    { title: "IP Assets", icon: <IconCopyright className="h-full w-full" />, href: "/ip-assets" },
+    { title: "Portfolio", icon: <IconWallet className="h-full w-full" />, href: "/portfolio" },
+    { title: "Verification", icon: <IconShield className="h-full w-full" />, href: "/verification" },
+    { title: "Admin", icon: <IconSettings className="h-full w-full" />, href: "/admin/verification" },
   ];
 
-  // Connect wallet button - separate from the dock
-  const ConnectButton = () => (
-    <button
-      onClick={() => {
-        if (address) {
-        } else {
-          connect();
+  const ConnectButton = () => {
+    const { starknetAddress, connectStarknet } = useStarknetContext();
+    const [starknetBalance, setStarknetBalance] = useState<string | null>(null);
+  
+    useEffect(() => {
+      const fetchStarknetBalance = async () => {
+        if (starknetAddress) {
+          try {
+            const { Provider, Contract } = await import("starknet");
+            const provider = new Provider({ sequencer: { network: "sepolia-testnet" } });
+  
+            // Initialize the contract
+            const contract = new Contract(StartupFundingABI, STARKNET_CONTRACT_ADDRESS, provider);
+  
+            // Check if the balance_of function exists
+            if (typeof contract.balance_of !== "function") {
+              console.error("balance_of function not found in the contract");
+              return;
+            }
+  
+            // Call the `balance_of` function
+            const balanceWei = await contract.balance_of(starknetAddress);
+  
+            // Convert from wei to ETH
+            const balanceEth = Number(balanceWei[0]) / 10 ** 18;
+            setStarknetBalance(balanceEth.toFixed(4));
+          } catch (error) {
+            console.error("Error fetching StarkNet balance:", error);
+          }
         }
-      }}
-      className="bg-[#00E6E6] text-[#1a1a1a] font-medium px-4 py-2 rounded-md hover:bg-[#00b8e6] transition-colors flex gap-2 fixed top-4 right-4 z-50"
-    >
-      <Image height={24} width={24} src="/metamask.webp" alt="logo" />
-      {balance ? `${balance.substring(0, 5)} AVAX` : "Connect"}
-    </button>
-  );
+      };
+  
+      fetchStarknetBalance();
+    }, [starknetAddress]);
+  
+    return (
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
+        <button
+          onClick={connectStarknet}
+          className="bg-[#FF5F1F] text-white font-medium px-4 py-2 rounded-md hover:bg-[#E54D1B] transition-colors flex gap-2"
+        >
+          <Image height={24} width={24} src="/argentx.png" alt="ArgentX logo" />
+          {starknetAddress ? (
+            <>
+              {starknetAddress.substring(0, 6)}...{starknetAddress.substring(starknetAddress.length - 4)} {" "}
+              {/* {starknetBalance || ""} STRK */}
+            </>
+          ) : (
+            "Connect StarkNet"
+          )}
+        </button>
+      </div>
+    );
+  };
 
   return (
     <>
       <ConnectButton />
-      <FloatingDock 
-        items={navItems} 
-        desktopClassName="fixed bottom-8 left-1/2 -translate-x-1/2 z-50" 
-        mobileClassName="fixed bottom-8 right-8 z-50" 
+      <FloatingDock
+        items={navItems}
+        desktopClassName="fixed bottom-8 left-1/2 -translate-x-1/2 z-50"
+        mobileClassName="fixed bottom-8 right-8 z-50"
       />
     </>
   );
@@ -122,14 +140,12 @@ export const FloatingDock = ({
   items: { title: string; icon: React.ReactNode; href: string }[];
   desktopClassName?: string;
   mobileClassName?: string;
-}) => {
-  return (
-    <>
-      <FloatingDockDesktop items={items} className={desktopClassName} />
-      <FloatingDockMobile items={items} className={mobileClassName} />
-    </>
-  );
-};
+}) => (
+  <>
+    <FloatingDockDesktop items={items} className={desktopClassName} />
+    <FloatingDockMobile items={items} className={mobileClassName} />
+  </>
+);
 
 const FloatingDockMobile = ({
   items,
@@ -140,7 +156,7 @@ const FloatingDockMobile = ({
 }) => {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  
+
   return (
     <div className={cn("relative block md:hidden", className)}>
       <AnimatePresence>
@@ -153,26 +169,16 @@ const FloatingDockMobile = ({
               <motion.div
                 key={item.title}
                 initial={{ opacity: 0, y: 10 }}
-                animate={{
-                  opacity: 1,
-                  y: 0,
-                }}
-                exit={{
-                  opacity: 0,
-                  y: 10,
-                  transition: {
-                    delay: idx * 0.05,
-                  },
-                }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10, transition: { delay: idx * 0.05 } }}
                 transition={{ delay: (items.length - 1 - idx) * 0.05 }}
               >
                 <Link
                   href={item.href}
-                  key={item.title}
                   className={cn(
                     "h-10 w-10 rounded-full flex items-center justify-center",
-                    pathname === item.href 
-                      ? "bg-[#00E6E6] text-[#1a1a1a]" 
+                    pathname === item.href
+                      ? "bg-[#00E6E6] text-[#1a1a1a]"
                       : "bg-gray-50 dark:bg-neutral-900 text-neutral-600 dark:text-neutral-300"
                   )}
                 >
@@ -200,9 +206,9 @@ const FloatingDockDesktop = ({
   items: { title: string; icon: React.ReactNode; href: string }[];
   className?: string;
 }) => {
-  let mouseX = useMotionValue(Infinity);
+  const mouseX = useMotionValue(Infinity);
   const pathname = usePathname();
-  
+
   return (
     <motion.div
       onMouseMove={(e) => mouseX.set(e.pageX)}
@@ -213,10 +219,10 @@ const FloatingDockDesktop = ({
       )}
     >
       {items.map((item) => (
-        <IconContainer 
-          mouseX={mouseX} 
-          key={item.title} 
-          {...item} 
+        <IconContainer
+          mouseX={mouseX}
+          key={item.title}
+          {...item}
           isActive={pathname === item.href}
         />
       ))}
@@ -237,44 +243,24 @@ function IconContainer({
   href: string;
   isActive: boolean;
 }) {
-  let ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
 
-  let distance = useTransform(mouseX, (val) => {
-    let bounds = ref.current?.getBoundingClientRect() ?? { x: 0, width: 0 };
+  const distance = useTransform(mouseX, (val) => {
+    const bounds = ref.current?.getBoundingClientRect() ?? { x: 0, width: 0 };
     return val - bounds.x - bounds.width / 2;
   });
 
-  let widthTransform = useTransform(distance, [-150, 0, 150], [40, 80, 40]);
-  let heightTransform = useTransform(distance, [-150, 0, 150], [40, 80, 40]);
+  const widthTransform = useTransform(distance, [-150, 0, 150], [40, 80, 40]);
+  const heightTransform = useTransform(distance, [-150, 0, 150], [40, 80, 40]);
 
-  let widthTransformIcon = useTransform(distance, [-150, 0, 150], [20, 40, 20]);
-  let heightTransformIcon = useTransform(
-    distance,
-    [-150, 0, 150],
-    [20, 40, 20]
-  );
+  const widthTransformIcon = useTransform(distance, [-150, 0, 150], [20, 40, 20]);
+  const heightTransformIcon = useTransform(distance, [-150, 0, 150], [20, 40, 20]);
 
-  let width = useSpring(widthTransform, {
-    mass: 0.1,
-    stiffness: 150,
-    damping: 12,
-  });
-  let height = useSpring(heightTransform, {
-    mass: 0.1,
-    stiffness: 150,
-    damping: 12,
-  });
+  const width = useSpring(widthTransform, { mass: 0.1, stiffness: 150, damping: 12 });
+  const height = useSpring(heightTransform, { mass: 0.1, stiffness: 150, damping: 12 });
 
-  let widthIcon = useSpring(widthTransformIcon, {
-    mass: 0.1,
-    stiffness: 150,
-    damping: 12,
-  });
-  let heightIcon = useSpring(heightTransformIcon, {
-    mass: 0.1,
-    stiffness: 150,
-    damping: 12,
-  });
+  const widthIcon = useSpring(widthTransformIcon, { mass: 0.1, stiffness: 150, damping: 12 });
+  const heightIcon = useSpring(heightTransformIcon, { mass: 0.1, stiffness: 150, damping: 12 });
 
   const [hovered, setHovered] = useState(false);
 
@@ -287,8 +273,8 @@ function IconContainer({
         onMouseLeave={() => setHovered(false)}
         className={cn(
           "aspect-square rounded-full flex items-center justify-center relative",
-          isActive 
-            ? "bg-[#00E6E6] text-[#1a1a1a]" 
+          isActive
+            ? "bg-[#00E6E6] text-[#1a1a1a]"
             : "bg-gray-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300"
         )}
       >
